@@ -1,0 +1,412 @@
+---
+title: "Assignment 2 solution"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(rnoaa)
+library(dplyr)
+library(mgcv)
+library(ggplot2)
+library(timetk)
+library(anytime)
+library(broom)
+library(caTools)
+library(zoo)
+library(RcppRoll)
+
+```
+
+
+
+
+```{r}
+
+#Task 1
+#Reference: https://cran.r-project.org/web/packages/rnoaa/vignettes/ncdc_vignette.html
+#https://ropensci.org/tutorials/rnoaa_tutorial/
+
+library('rnoaa')
+
+#Collecting the station data from Perth Metro station
+ncdc_stations(datasetid='GHCND', locationid='FIPS:12017', stationid='GHCND:ASN00009225',token= "uDCPKqkPwHeDdeSRHzoNXnBvdrnpURGM")
+
+```
+```{r}
+
+#https://www.ncdc.noaa.gov/cdo-web/datasets/GHCND/stations/GHCND:ASN00009225/detail
+#The stationid belongs to Perth Metro
+#Collecting weather data from station Perth Metro
+
+out1 <- ncdc(datasetid='GHCND', stationid='GHCND:ASN00009225',startdate = '2013-07-01', enddate = '2014-05-29', limit=1000,token= "uDCPKqkPwHeDdeSRHzoNXnBvdrnpURGM")
+out2 <- ncdc(datasetid='GHCND', stationid='GHCND:ASN00009225',startdate = '2014-05-30', enddate = '2014-06-30', limit=500,token= "uDCPKqkPwHeDdeSRHzoNXnBvdrnpURGM")
+
+
+#Combining the weather data
+df <- ncdc_combine(out1, out2)
+df
+df <- df$data %>% select(date,datatype,value)
+
+#Apply spread function 
+df_weather <- df   %>%  
+  spread(datatype, value)
+
+#Format the date 
+df_weather$date <- 
+  (as.POSIXct(df_weather$date,format="%Y-%m-%d"))
+
+df_weather
+
+```
+
+
+
+
+
+
+```{r}
+#Number of rows : 
+nrow(df_weather)
+
+#Number of columns 
+ncol(df_weather)
+
+#3 columns 
+
+#The data covers a time period of one year between 2013/07/01 and 2014/06/30
+```
+
+
+```{r}
+#Task 3
+#In the first assignment we have used Attendance to study the ED demands throughout the year. 
+#https://stackoverflow.com/questions/31170512/regression-analysis-not-showing-summary
+
+ed_data_link <- 'govhack3.csv'
+top_row <- read_csv(ed_data_link, col_names = FALSE, n_max = 1)
+second_row <- read_csv(ed_data_link, n_max = 1)
+
+column_names <- second_row %>% 
+  unlist(., use.names=FALSE) %>% 
+  make.unique(., sep = "__") # double underscore
+
+column_names[2:8] <- str_c(column_names[2:8], '0', sep='__')
+
+daily_attendance <- 
+  read_csv(ed_data_link, skip = 2, col_names = column_names)
+
+df_unite <- unite(daily_attendance, "Royal_Perth", c("Attendance__0", "Admissions__0", "Tri_1__0", "Tri_2__0", "Tri_3__0", "Tri_4__0", "Tri_5__0"))
+df_unite1 <- unite(df_unite, "Fremantle", c("Attendance__1", "Admissions__1", "Tri_1__1", "Tri_2__1", "Tri_3__1", "Tri_4__1", "Tri_5__1"))
+df_unite2 <- unite(df_unite1, "Princess_Margaret", c("Attendance__2", "Admissions__2", "Tri_1__2", "Tri_2__2", "Tri_3__2", "Tri_4__2", "Tri_5__2"))
+df_unite3 <- unite(df_unite2, "King_Edward", c("Attendance__3", "Admissions__3", "Tri_1__3", "Tri_2__3", "Tri_3__3", "Tri_4__3", "Tri_5__3"))
+df_unite4 <- unite(df_unite3, "Charles", c("Attendance__4", "Admissions__4", "Tri_1__4", "Tri_2__4", "Tri_3__4", "Tri_4__4", "Tri_5__4"))
+df_unite5 <- unite(df_unite4, "Armadale", c("Attendance__5", "Admissions__5", "Tri_1__5", "Tri_2__5", "Tri_3__5", "Tri_4__5", "Tri_5__5"))
+df_unite6 <- unite(df_unite5, "Swan_district", c("Attendance__6", "Admissions__6", "Tri_1__6", "Tri_2__6", "Tri_3__6", "Tri_4__6", "Tri_5__6"))
+df_unite7 <- unite(df_unite6, "Rockingham", c("Attendance__7", "Admissions__7", "Tri_1__7", "Tri_2__7", "Tri_3__7", "Tri_4__7", "Tri_5__7"))
+df_unite8 <- unite(df_unite7, "Joondalup", c("Attendance__8", "Admissions__8", "Tri_1__8", "Tri_2__8", "Tri_3__8", "Tri_4__8", "Tri_5__8"))
+
+df_gather <- gather(df_unite8, 'Hospitals', 'Value', Royal_Perth:Joondalup)
+separate_DF <- df_gather %>% separate(Value, 
+                                c("Attendence", "Admissions", "Tri1", "Tri2", "Tri3", "Tri4", "Tri5"), sep = "_")
+
+final <- gather(separate_DF, triage, value, Tri1:Tri5)
+final$value[final$value == "N/A"] <- 0
+final$value <- as.numeric(final$value)
+
+#m1 = mean(final$Attendence) 
+
+final$Attendence[final$Attendence == "N/A"] <- 0
+final$Attendence <- as.numeric(final$Attendence)
+
+#m2  = mean(final$Admissions) 
+final$Admissions[final$Admissions == "N/A"] <- 0 
+final$Admissions <- as.numeric(final$Admissions)
+
+
+Royal_Perth = subset(x = final,
+    subset = Hospitals == "Royal_Perth")
+```
+```{r}
+Royal_Perth <-
+  Royal_Perth[c(1:365),]
+Royal_Perth
+
+
+```
+
+
+```{r}
+#Change the data type of Date to numeric and changing the format of date and stored it as a seperate column 
+
+Royal_Perth$Date<-
+  as.POSIXct(Royal_Perth$Date,format="%d-%b-%Y")
+
+#Royal_Perth <- Royal_Perth %>%
+#  mutate(transformed_date = as.numeric(as.POSIXct(Royal_Perth$Date,format="%d-%b-%Y")))
+
+Royal_Perth
+```
+
+
+```{r}
+#Plot Date vs Attendence
+
+ggplot(Royal_Perth, aes(Date, Attendence)) + geom_line()
+
+
+```
+
+
+```{r}
+
+#Fitting a linear model Date as the predictor and response as Attendance 
+results <- lm(Attendence ~ Date, 
+                  data = Royal_Perth)
+
+summary(results)
+
+#Fitting a regression line to the model
+ggplot(Royal_Perth, aes(Date, Attendence)) + 
+  geom_point() + 
+  geom_smooth(method = lm)
+
+
+```
+
+
+```{r}
+#http://www.learnbymarketing.com/tutorials/linear-regression-in-r/#:~:text=lm()%20Function-,Linear%20Regression%20Example%20in%20R%20using%20lm()%20Function,variable%20from%20your%20new%20model.
+
+
+plot(results$resid~Royal_Perth$Attendence[order(Royal_Perth$Attendence)],
+ main="Attendence Residuals\nfor Simple Regression",
+ xlab="Attendance", ylab="Residuals")
+abline(h=0,lty=2)
+
+#Histogram of Residuals
+hist(results$resid, main="Histogram of Residuals",
+ ylab="Residuals")
+
+
+plot(results, which = 1)
+
+#Q-Q Plot
+#Checking normality
+qqnorm(results$resid)
+qqline(results$resid)
+
+
+glance(results)
+#Clearly, the residuals are not evenly spread across values of x, and we need to consider a better model.
+
+tidy(results)
+
+```
+
+
+
+
+```{r}
+#http://environmentalcomputing.net/intro-to-gams/
+Royal_Perth <- Royal_Perth %>%
+  mutate(transformed_date = as.numeric(as.POSIXct(Royal_Perth$Date,format="%d-%b-%Y")))
+
+
+gam_y <- gam(Attendence ~ s(transformed_date), 
+             family = poisson,
+             data = Royal_Perth,
+             method = "REML")
+```
+
+
+```{r}
+ggplot(Royal_Perth, aes(transformed_date, Attendence)) + 
+  geom_point() + 
+  geom_smooth(method = "gam")
+
+
+#Viewing the residual plots
+gam.check(gam_y)
+
+
+#Using summary with the model object will give the significance of the smooth term, along with the variance explained.
+
+summary(gam_y)
+
+#Print the AIC score for the model 
+glance(gam_y)
+
+#Plot the GAM model
+plot(gam_y)
+
+tidy(gam_y)
+
+```
+
+
+```{r}
+#https://petolau.github.io/Analyzing-double-seasonal-time-series-with-GAM-in-R/
+#incorporating the weekly seasonality to the 
+Royal_Perth <- Royal_Perth %>%
+  mutate(wkdy = as.POSIXlt(Date)$wday)
+
+Royal_Perth
+#The days in a week are numeric coded
+
+```
+
+
+```{r}
+#Fitting a GAM model with the 2 independent variable(Date and weekday) + Attendence
+#model augment
+gam_wk <- gam(Attendence ~ s(transformed_date)+ s(wkdy, k = 7, bs = 'cc'), 
+              family = poisson,
+              method = "REML", data = Royal_Perth)
+summary(gam_wk)
+
+#Find the AIC score
+glance(gam_wk)
+
+#Plot the GAM model
+plot(gam_wk, pages = 1)
+gam.check(gam_wk)
+#As the AIC score  of the weekly model is significantly lower, it is significantly better than the other model. 
+
+
+tidy(gam_wk)
+
+
+```
+
+
+
+```{r}
+
+#Task 4.1
+#https://community.rstudio.com/t/calculate-a-rolling-90-day-average-of-a-daily-time-series-with-duplicate-dates/17306
+#https://stackoverflow.com/questions/37773356/find-sum-of-previous-n-rows-in-dataframe
+
+#In Australia DMTs are typically calculated as the simple average of the daily maximum and daily minimum temperatures
+
+df_weather <- df_weather   %>%
+  mutate(DMT =  (TMAX  - TMIN)/2)
+
+
+#Calculating the 95th percentiles of DMT 
+df_weather <- df_weather    %>%
+   mutate(t95 = quantile(df_weather$DMT, c(0.95), na.rm = T))
+
+
+#Finding the 3 moving average of DMT
+df_weather <- df_weather     %>%
+  mutate(avg =  rollapplyr(DMT, width = 3, FUN = mean, fill = NA))
+#runmean(DMT, 3))
+
+
+#Finding EHI_sig
+df_weather <- df_weather     %>%
+  mutate(EHI_sig =  (avg - t95))
+
+
+#Finding the mean from the past 30 days.
+df_weather <- df_weather     %>%
+  mutate(EHI_acc = rollmeanr(df_weather$DMT, k = 30, fill = NA))
+
+#Calculating the acclimatisation index
+df_weather <- df_weather     %>%
+  mutate(EHI_acc1 = (avg -EHI_acc))
+
+df_weather <- df_weather     %>%
+  mutate(EHF = (EHI_sig * pmax(1, EHI_acc1)))
+
+df_weather
+
+
+```
+
+
+
+
+
+```{r}
+
+#Plot the EHF
+ggplot(df_weather, aes(date, EHF)) + 
+  geom_line() 
+  
+```
+```{r}
+#Task 4.2
+#Model the EHF
+
+#Merge the EHF column to the data frame Royal_Perth
+x1 <- df_weather$EHF
+x2 <- Royal_Perth$wkdy
+
+#add the EHF as a new column 
+Royal_Perth['EHF'] <- x1
+Royal_Perth
+
+```
+```{r}
+
+Royal_Perth$EHF[Royal_Perth$EHF == "N/A"] <- 0
+
+
+gam_ehf <- gam(Attendence ~ s(transformed_date) + s(wkdy,  k = 7, bs = 'cc') + s(EHF), 
+               family = poisson,
+               method = "REML", 
+               data = Royal_Perth)
+summary(gam_ehf)
+
+
+plot(gam_ehf, pages = 1)
+
+glance(gam_ehf)
+
+gam.check(gam_ehf)
+
+tidy(gam_ehf)
+
+```
+```{r}
+#Considering precipitation as an extra predictor in the model. 
+x3 <- df_weather$PRCP
+
+Royal_Perth['PRCP'] <- x3
+
+Royal_Perth %>% 
+  select(Date,Attendence,transformed_date,wkdy,PRCP,EHF)
+
+```
+
+```{r}
+
+gam_prcp <- gam(Attendence ~ s(transformed_date) + s(wkdy,  k = 7, bs = 'cc') + s(EHF)+ s(PRCP), 
+               family = poisson,
+               method = "REML", 
+               data = Royal_Perth)
+
+```
+
+```{r}
+
+#Summary of the model
+summary(gam_prcp)
+
+
+plot(gam_prcp, pages = 1)
+
+glance(gam_prcp)
+tidy(gam_prcp)
+
+```
+```{r}
+
+#checking concurvity
+concurvity(gam_prcp,full=TRUE) #Checking Concurvity
+
+#As the values are below <0.8, there is no concurvity in this model .
+```
+
